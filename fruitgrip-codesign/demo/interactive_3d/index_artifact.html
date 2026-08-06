@@ -153,8 +153,8 @@
       <div class="panel-section">
         <h2>Legend</h2>
         <div class="legend-row"><span class="legend-swatch" style="background:var(--accent);"></span>Contact force vector</div>
-        <div class="legend-row"><span class="legend-swatch" style="background:#e7ebf2;"></span>Gripper (design-accurate)</div>
-        <div class="legend-row"><span class="legend-swatch" style="background:#5b6478;"></span>Arm (schematic — base&rarr;hand only, not exact per-joint FK)</div>
+        <div class="legend-row"><span class="legend-swatch" style="background:#d7dbe1;"></span>Gripper (design-accurate)</div>
+        <div class="legend-row"><span class="legend-swatch" style="background:#f1ece1;"></span>Arm (schematic — base&rarr;hand only, not exact per-joint FK)</div>
       </div>
     </div>
   </div>
@@ -181,6 +181,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
 
 </script>
 <script>
+(function(){
 const {
 	EventDispatcher,
 	MOUSE,
@@ -1599,6 +1600,320 @@ class OrbitControls extends EventDispatcher {
 
 window.OrbitControls = OrbitControls;
 
+})();
+</script>
+<script>
+(function(){
+const {
+	BoxGeometry,
+	Vector3
+} = THREE;
+
+const _tempNormal = new Vector3();
+
+function getUv( faceDirVector, normal, uvAxis, projectionAxis, radius, sideLength ) {
+
+	const totArcLength = 2 * Math.PI * radius / 4;
+
+	// length of the planes between the arcs on each axis
+	const centerLength = Math.max( sideLength - 2 * radius, 0 );
+	const halfArc = Math.PI / 4;
+
+	// Get the vector projected onto the Y plane
+	_tempNormal.copy( normal );
+	_tempNormal[ projectionAxis ] = 0;
+	_tempNormal.normalize();
+
+	// total amount of UV space alloted to a single arc
+	const arcUvRatio = 0.5 * totArcLength / ( totArcLength + centerLength );
+
+	// the distance along one arc the point is at
+	const arcAngleRatio = 1.0 - ( _tempNormal.angleTo( faceDirVector ) / halfArc );
+
+	if ( Math.sign( _tempNormal[ uvAxis ] ) === 1 ) {
+
+		return arcAngleRatio * arcUvRatio;
+
+	} else {
+
+		// total amount of UV space alloted to the plane between the arcs
+		const lenUv = centerLength / ( totArcLength + centerLength );
+		return lenUv + arcUvRatio + arcUvRatio * ( 1.0 - arcAngleRatio );
+
+	}
+
+}
+
+class RoundedBoxGeometry extends BoxGeometry {
+
+	constructor( width = 1, height = 1, depth = 1, segments = 2, radius = 0.1 ) {
+
+		// ensure segments is odd so we have a plane connecting the rounded corners
+		segments = segments * 2 + 1;
+
+		// ensure radius isn't bigger than shortest side
+		radius = Math.min( width / 2, height / 2, depth / 2, radius );
+
+		super( 1, 1, 1, segments, segments, segments );
+
+		// if we just have one segment we're the same as a regular box
+		if ( segments === 1 ) return;
+
+		const geometry2 = this.toNonIndexed();
+
+		this.index = null;
+		this.attributes.position = geometry2.attributes.position;
+		this.attributes.normal = geometry2.attributes.normal;
+		this.attributes.uv = geometry2.attributes.uv;
+
+		//
+
+		const position = new Vector3();
+		const normal = new Vector3();
+
+		const box = new Vector3( width, height, depth ).divideScalar( 2 ).subScalar( radius );
+
+		const positions = this.attributes.position.array;
+		const normals = this.attributes.normal.array;
+		const uvs = this.attributes.uv.array;
+
+		const faceTris = positions.length / 6;
+		const faceDirVector = new Vector3();
+		const halfSegmentSize = 0.5 / segments;
+
+		for ( let i = 0, j = 0; i < positions.length; i += 3, j += 2 ) {
+
+			position.fromArray( positions, i );
+			normal.copy( position );
+			normal.x -= Math.sign( normal.x ) * halfSegmentSize;
+			normal.y -= Math.sign( normal.y ) * halfSegmentSize;
+			normal.z -= Math.sign( normal.z ) * halfSegmentSize;
+			normal.normalize();
+
+			positions[ i + 0 ] = box.x * Math.sign( position.x ) + normal.x * radius;
+			positions[ i + 1 ] = box.y * Math.sign( position.y ) + normal.y * radius;
+			positions[ i + 2 ] = box.z * Math.sign( position.z ) + normal.z * radius;
+
+			normals[ i + 0 ] = normal.x;
+			normals[ i + 1 ] = normal.y;
+			normals[ i + 2 ] = normal.z;
+
+			const side = Math.floor( i / faceTris );
+
+			switch ( side ) {
+
+				case 0: // right
+
+					// generate UVs along Z then Y
+					faceDirVector.set( 1, 0, 0 );
+					uvs[ j + 0 ] = getUv( faceDirVector, normal, 'z', 'y', radius, depth );
+					uvs[ j + 1 ] = 1.0 - getUv( faceDirVector, normal, 'y', 'z', radius, height );
+					break;
+
+				case 1: // left
+
+					// generate UVs along Z then Y
+					faceDirVector.set( - 1, 0, 0 );
+					uvs[ j + 0 ] = 1.0 - getUv( faceDirVector, normal, 'z', 'y', radius, depth );
+					uvs[ j + 1 ] = 1.0 - getUv( faceDirVector, normal, 'y', 'z', radius, height );
+					break;
+
+				case 2: // top
+
+					// generate UVs along X then Z
+					faceDirVector.set( 0, 1, 0 );
+					uvs[ j + 0 ] = 1.0 - getUv( faceDirVector, normal, 'x', 'z', radius, width );
+					uvs[ j + 1 ] = getUv( faceDirVector, normal, 'z', 'x', radius, depth );
+					break;
+
+				case 3: // bottom
+
+					// generate UVs along X then Z
+					faceDirVector.set( 0, - 1, 0 );
+					uvs[ j + 0 ] = 1.0 - getUv( faceDirVector, normal, 'x', 'z', radius, width );
+					uvs[ j + 1 ] = 1.0 - getUv( faceDirVector, normal, 'z', 'x', radius, depth );
+					break;
+
+				case 4: // front
+
+					// generate UVs along X then Y
+					faceDirVector.set( 0, 0, 1 );
+					uvs[ j + 0 ] = 1.0 - getUv( faceDirVector, normal, 'x', 'y', radius, width );
+					uvs[ j + 1 ] = 1.0 - getUv( faceDirVector, normal, 'y', 'x', radius, height );
+					break;
+
+				case 5: // back
+
+					// generate UVs along X then Y
+					faceDirVector.set( 0, 0, - 1 );
+					uvs[ j + 0 ] = getUv( faceDirVector, normal, 'x', 'y', radius, width );
+					uvs[ j + 1 ] = 1.0 - getUv( faceDirVector, normal, 'y', 'x', radius, height );
+					break;
+
+			}
+
+		}
+
+	}
+
+}
+
+window.RoundedBoxGeometry = RoundedBoxGeometry;
+
+})();
+</script>
+<script>
+(function(){
+/**
+ * https://github.com/google/model-viewer/blob/master/packages/model-viewer/src/three-components/EnvironmentScene.ts
+ */
+
+const {
+ 	BackSide,
+ 	BoxGeometry,
+ 	Mesh,
+	MeshBasicMaterial,
+ 	MeshStandardMaterial,
+ 	PointLight,
+ 	Scene,
+} = THREE;
+
+class RoomEnvironment extends Scene {
+
+	constructor( renderer = null ) {
+
+		super();
+
+		const geometry = new BoxGeometry();
+		geometry.deleteAttribute( 'uv' );
+
+		const roomMaterial = new MeshStandardMaterial( { side: BackSide } );
+		const boxMaterial = new MeshStandardMaterial();
+
+		let intensity = 5;
+
+		if ( renderer !== null && renderer._useLegacyLights === false ) intensity = 900;
+
+		const mainLight = new PointLight( 0xffffff, intensity, 28, 2 );
+		mainLight.position.set( 0.418, 16.199, 0.300 );
+		this.add( mainLight );
+
+		const room = new Mesh( geometry, roomMaterial );
+		room.position.set( - 0.757, 13.219, 0.717 );
+		room.scale.set( 31.713, 28.305, 28.591 );
+		this.add( room );
+
+		const box1 = new Mesh( geometry, boxMaterial );
+		box1.position.set( - 10.906, 2.009, 1.846 );
+		box1.rotation.set( 0, - 0.195, 0 );
+		box1.scale.set( 2.328, 7.905, 4.651 );
+		this.add( box1 );
+
+		const box2 = new Mesh( geometry, boxMaterial );
+		box2.position.set( - 5.607, - 0.754, - 0.758 );
+		box2.rotation.set( 0, 0.994, 0 );
+		box2.scale.set( 1.970, 1.534, 3.955 );
+		this.add( box2 );
+
+		const box3 = new Mesh( geometry, boxMaterial );
+		box3.position.set( 6.167, 0.857, 7.803 );
+		box3.rotation.set( 0, 0.561, 0 );
+		box3.scale.set( 3.927, 6.285, 3.687 );
+		this.add( box3 );
+
+		const box4 = new Mesh( geometry, boxMaterial );
+		box4.position.set( - 2.017, 0.018, 6.124 );
+		box4.rotation.set( 0, 0.333, 0 );
+		box4.scale.set( 2.002, 4.566, 2.064 );
+		this.add( box4 );
+
+		const box5 = new Mesh( geometry, boxMaterial );
+		box5.position.set( 2.291, - 0.756, - 2.621 );
+		box5.rotation.set( 0, - 0.286, 0 );
+		box5.scale.set( 1.546, 1.552, 1.496 );
+		this.add( box5 );
+
+		const box6 = new Mesh( geometry, boxMaterial );
+		box6.position.set( - 2.193, - 0.369, - 5.547 );
+		box6.rotation.set( 0, 0.516, 0 );
+		box6.scale.set( 3.875, 3.487, 2.986 );
+		this.add( box6 );
+
+
+		// -x right
+		const light1 = new Mesh( geometry, createAreaLightMaterial( 50 ) );
+		light1.position.set( - 16.116, 14.37, 8.208 );
+		light1.scale.set( 0.1, 2.428, 2.739 );
+		this.add( light1 );
+
+		// -x left
+		const light2 = new Mesh( geometry, createAreaLightMaterial( 50 ) );
+		light2.position.set( - 16.109, 18.021, - 8.207 );
+		light2.scale.set( 0.1, 2.425, 2.751 );
+		this.add( light2 );
+
+		// +x
+		const light3 = new Mesh( geometry, createAreaLightMaterial( 17 ) );
+		light3.position.set( 14.904, 12.198, - 1.832 );
+		light3.scale.set( 0.15, 4.265, 6.331 );
+		this.add( light3 );
+
+		// +z
+		const light4 = new Mesh( geometry, createAreaLightMaterial( 43 ) );
+		light4.position.set( - 0.462, 8.89, 14.520 );
+		light4.scale.set( 4.38, 5.441, 0.088 );
+		this.add( light4 );
+
+		// -z
+		const light5 = new Mesh( geometry, createAreaLightMaterial( 20 ) );
+		light5.position.set( 3.235, 11.486, - 12.541 );
+		light5.scale.set( 2.5, 2.0, 0.1 );
+		this.add( light5 );
+
+		// +y
+		const light6 = new Mesh( geometry, createAreaLightMaterial( 100 ) );
+		light6.position.set( 0.0, 20.0, 0.0 );
+		light6.scale.set( 1.0, 0.1, 1.0 );
+		this.add( light6 );
+
+	}
+
+	dispose() {
+
+		const resources = new Set();
+
+		this.traverse( ( object ) => {
+
+			if ( object.isMesh ) {
+
+				resources.add( object.geometry );
+				resources.add( object.material );
+
+			}
+
+		} );
+
+		for ( const resource of resources ) {
+
+			resource.dispose();
+
+		}
+
+	}
+
+}
+
+function createAreaLightMaterial( intensity ) {
+
+	const material = new MeshBasicMaterial();
+	material.color.setScalar( intensity );
+	return material;
+
+}
+
+window.RoomEnvironment = RoomEnvironment;
+
+})();
 </script>
 <script>
 /* ============================================================
@@ -1649,6 +1964,13 @@ function mjQuatToThree(q) {
   return new THREE.Quaternion(q[1], q[2], q[3], q[0]);
 }
 
+// Purely visual: how far a finger's rendered tube start is pushed back into the
+// housing (along the same local +Z the tube already travels along) beyond its real
+// kinematic root, so the tube reads as physically mounted INTO the housing rather
+// than just touching its surface -- not part of the real gripper geometry, and not
+// used anywhere real trajectory/contact values are computed.
+const FINGER_EMBED_DEPTH = 0.008;
+
 // World-frame positions of one finger's capsule-chain polyline at a given step,
 // reconstructed from REAL recorded hand pose + finger joint value -- not fabricated.
 // Composition order mirrors MJCF: world = hand * bodyRot * (bodyPos + jointOffset), and
@@ -1662,6 +1984,7 @@ function fingerWorldChain(gripper, fingerIdx, fingerQ, handPos, handQuatThree) {
   const handPosVec = new THREE.Vector3(handPos[0], handPos[1], handPos[2]);
 
   const chain = fingerLocalChain(gripper.finger_length, gripper.curvature_deg);
+  chain.unshift([0, 0, -FINGER_EMBED_DEPTH]);
   return chain.map(p => {
     const v = new THREE.Vector3(p[0], p[1], p[2]);
     v.applyQuaternion(bodyQuat);
@@ -1677,16 +2000,45 @@ function fingerWorldChain(gripper, fingerIdx, fingerQ, handPos, handQuatThree) {
 // ---------------------------------------------------------------------------
 const viewportEl = document.getElementById("viewport");
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0d12);
-scene.fog = new THREE.Fog(0x0a0d12, 2.2, 5.5);
+
+// Soft dark-to-slightly-lighter radial gradient instead of flat black -- reads as a
+// studio backdrop with depth rather than a debug void. Built once as a canvas texture.
+function makeBackgroundGradient() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 512;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(256, 220, 40, 256, 256, 380);
+  g.addColorStop(0, "#1b212e");
+  g.addColorStop(0.55, "#12161f");
+  g.addColorStop(1, "#090b10");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 512, 512);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+scene.background = makeBackgroundGradient();
+scene.fog = new THREE.Fog(0x12161f, 2.4, 6.0);
 
 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 20);
 camera.up.set(0, 0, 1); // recorded data is Z-up; keep the mapping identity and reorient the camera instead
-camera.position.set(0.95, -0.95, 1.35);
+camera.position.set(1.05, -1.05, 1.5);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 viewportEl.appendChild(renderer.domElement);
+
+// Cheap procedural environment map (Three's stock "room" scene, PMREM-convolved) so
+// the cream-white plastic materials pick up soft ambient reflections instead of
+// looking flat-shaded -- this is what separates "rendered plastic" from "photographed
+// plastic" and costs one offscreen render at startup, not a runtime cost per frame.
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0.35, 0.0, 0.85);
@@ -1702,36 +2054,70 @@ function resize() {
 }
 window.addEventListener("resize", resize);
 
-// Lighting
-scene.add(new THREE.AmbientLight(0x8899bb, 0.55));
-const key = new THREE.DirectionalLight(0xfff2e6, 1.1);
-key.position.set(1.4, -1.0, 2.2);
+// Three-point-style lighting: hemisphere for soft ambient fill (sky/ground tint, cheap
+// and nicer than a flat AmbientLight), a shadow-casting key light, a dim opposite-side
+// fill (no shadows -- would just double up), and a cool rim light to separate the
+// robot's silhouette from the background.
+scene.add(new THREE.HemisphereLight(0x9fb3d9, 0x2a2620, 0.42));
+
+const key = new THREE.DirectionalLight(0xfff2e0, 1.7);
+key.position.set(1.5, -1.2, 2.4);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.5;
+key.shadow.camera.far = 6;
+key.shadow.camera.left = -1.4;
+key.shadow.camera.right = 1.4;
+key.shadow.camera.top = 1.4;
+key.shadow.camera.bottom = -1.4;
+key.shadow.bias = -0.0015;
+key.shadow.radius = 3;
 scene.add(key);
-const rim = new THREE.DirectionalLight(0x5588ff, 0.35);
-rim.position.set(-1.2, 1.0, 0.8);
+
+const fillLight = new THREE.DirectionalLight(0xcdd8f5, 0.55);
+fillLight.position.set(-1.3, -0.6, 1.0);
+scene.add(fillLight);
+
+const rim = new THREE.DirectionalLight(0x9fc4ff, 0.7);
+rim.position.set(-0.9, 1.3, 1.2);
 scene.add(rim);
 
-// Table (schematic — real geometry data isn't part of the recorded trajectory, only pose data is)
+// Table (schematic — real geometry data isn't part of the recorded trajectory, only pose data is).
+// Light matte gray rather than the old debug-brown, doubling as a soft shadow catcher.
 const tableGeo = new THREE.BoxGeometry(1.2, 0.8, 0.05);
-const tableMat = new THREE.MeshStandardMaterial({ color: 0x2a2118, roughness: 0.9 });
+const tableMat = new THREE.MeshStandardMaterial({ color: 0xbfc3ca, roughness: 0.95, metalness: 0.0 });
 const table = new THREE.Mesh(tableGeo, tableMat);
 table.position.set(0.35, 0.0, TABLE_TOP_Z - 0.025);
+table.receiveShadow = true;
 scene.add(table);
-const gridHelper = new THREE.GridHelper(1.4, 14, 0x2f3648, 0x1c2130);
+// Subtle scale-suggesting grid instead of a bright debug overlay: thin, low-opacity,
+// dark-gray-on-light-gray rather than the old high-contrast lines.
+const gridHelper = new THREE.GridHelper(1.4, 14, 0x9aa0ab, 0xc3c7cd);
 gridHelper.rotation.x = Math.PI / 2;
-gridHelper.position.set(0.35, 0.0, TABLE_TOP_Z + 0.001);
+gridHelper.position.set(0.35, 0.0, TABLE_TOP_Z + 0.002);
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.35;
 scene.add(gridHelper);
 
-// Franka base marker (schematic anchor for the arm indicator)
-const baseMarker = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.06, 24), new THREE.MeshStandardMaterial({ color: 0x333d52, roughness: 0.6 }));
+// Franka base marker (schematic anchor for the arm indicator) -- cream body, dark collar,
+// matching the arm's two-tone treatment below.
+const baseMarker = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.06, 24), new THREE.MeshStandardMaterial({ color: 0xf1ece1, roughness: 0.45, metalness: 0.08 }));
 baseMarker.rotation.x = Math.PI / 2;
 baseMarker.position.set(FRANKA_BASE[0], FRANKA_BASE[1], FRANKA_BASE[2] + 0.03);
+baseMarker.castShadow = true;
+baseMarker.receiveShadow = true;
 scene.add(baseMarker);
+const baseCollar = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.008, 10, 24), new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.35, metalness: 0.2 }));
+baseCollar.position.copy(baseMarker.position);
+baseCollar.position.z += 0.031;
+scene.add(baseCollar);
 
 // Arm indicator: schematic tube from the known base to the RECORDED hand position each
 // step. Deliberately not an exact 7-joint FK reconstruction (see legend) -- the arm_q
 // values are real and available in the trajectory data, just not rendered joint-by-joint.
-const armMat = new THREE.MeshStandardMaterial({ color: 0x5b6478, roughness: 0.55, metalness: 0.15 });
+// Cream-white body to match the real Franka Panda's actual finish, not an arbitrary color.
+const armMat = new THREE.MeshStandardMaterial({ color: 0xf1ece1, roughness: 0.45, metalness: 0.08 });
+const jointRingMat = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.3, metalness: 0.2 });
 const ARM_TUBE_RADIUS = 0.028;
 let armMesh = null;
 // THREE.TubeGeometry never caps its ends (it's an open hollow-cylinder surface
@@ -1743,7 +2129,21 @@ let armMesh = null;
 const armCapMat = armMat;
 const armEndCap = new THREE.Mesh(new THREE.SphereGeometry(ARM_TUBE_RADIUS, 12, 12), armCapMat);
 const armBaseCap = new THREE.Mesh(new THREE.SphereGeometry(ARM_TUBE_RADIUS, 12, 12), armCapMat);
+armEndCap.castShadow = armBaseCap.castShadow = true;
 scene.add(armEndCap, armBaseCap);
+
+// Purely cosmetic dark "joint ring" collars along the schematic tube, evoking the real
+// Franka's two-tone white-segment/black-joint look without claiming per-joint accuracy
+// (the arm is still one continuous schematic tube, per the legend). Positions are
+// fractions along the curve, recomputed every frame since the curve itself changes.
+const JOINT_RING_TS = [0.28, 0.62, 0.88];
+const jointRings = JOINT_RING_TS.map(() => {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(ARM_TUBE_RADIUS * 1.08, ARM_TUBE_RADIUS * 0.32, 8, 20), jointRingMat);
+  ring.castShadow = true;
+  scene.add(ring);
+  return ring;
+});
+
 function updateArm(handPos) {
   if (armMesh) scene.remove(armMesh);
   const from = new THREE.Vector3(FRANKA_BASE[0], FRANKA_BASE[1], FRANKA_BASE[2] + 0.05);
@@ -1752,26 +2152,50 @@ function updateArm(handPos) {
   const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
   const geo = new THREE.TubeGeometry(curve, 20, ARM_TUBE_RADIUS, 10, false);
   armMesh = new THREE.Mesh(geo, armMat);
+  armMesh.castShadow = true;
+  armMesh.receiveShadow = true;
   scene.add(armMesh);
   armBaseCap.position.copy(from);
   armEndCap.position.copy(to);
+
+  JOINT_RING_TS.forEach((t, i) => {
+    const ring = jointRings[i];
+    ring.position.copy(curve.getPointAt(t));
+    const tangent = curve.getTangentAt(t);
+    ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
+  });
 }
 
-// Hand/palm marker. Z half-extent must clear FINGER_BASE_Z (0.0584, the real Franka
-// hand-to-finger offset) -- fingers have no cap at their proximal end (it's meant to sit inside
-// this box; see buildFingers), so if the box is thinner than that offset there's a real,
-// uncovered gap between the box surface and where each open finger tube begins. The first chain
-// segment's direction is always exactly +Z locally (phi=0 at k=0, regardless of curvature), so
-// the tube's open end is a flat disc lying flush in that Z-plane -- the box only needs to clear
-// it by a couple mm, not overshoot it, or it swallows real finger length instead of just closing
-// the gap (0.075 half-extent, tried first, ate over a third of a 0.045m finger).
-const handGeo = new THREE.BoxGeometry(0.05, 0.09, 0.122);
-const handMat = new THREE.MeshStandardMaterial({ color: 0xc7cedb, roughness: 0.35, metalness: 0.25 });
+// Hand/palm marker.
+//
+// Z (depth): half-extent must clear FINGER_BASE_Z (0.0584, the real Franka hand-to-finger
+// offset) -- fingers have no cap at their proximal end (it's meant to sit inside this box; see
+// buildFingers), so if the box is thinner than that offset there's a real, uncovered gap between
+// the box surface and where each open finger tube begins. The first chain segment's direction is
+// always exactly +Z locally (phi=0 at k=0, regardless of curvature), so the tube's open end is a
+// flat disc lying flush in that Z-plane -- the box only needs to clear it by a couple mm, not
+// overshoot it, or it swallows real finger length instead of just closing the gap (0.075
+// half-extent, tried first, ate over a third of a 0.045m finger).
+//
+// X/Y (lateral): each finger's root is also offset sideways by `fingerQ` (aperture), rotated
+// per-finger around Z by its azimuth (0/120/240 deg for 3 fingers, 0/180 for 2). For a 2-finger
+// design that offset is pure +-Y (sin(0)=sin(180)=0, no X component), which is why the old
+// smaller box never showed a lateral gap there -- but for 3 fingers, the 120/240 azimuths put
+// real weight on X too. Measured directly from the recorded trajectories (not guessed): peak
+// |lateral offset| is X=0.0389m / Y=0.0449m (winner_apple_fail, most-open frame), while the old
+// box was only 0.025m/0.045m half-extent -- an up to 14mm real, visible gap on the side for the
+// 3-finger design specifically. Half-extents below clear the measured peaks by finger radius +
+// a few mm margin on every axis.
+const handGeo = new RoundedBoxGeometry(0.10, 0.11, 0.122, 4, 0.012);
+const handMat = new THREE.MeshStandardMaterial({ color: 0xf1ece1, roughness: 0.42, metalness: 0.08 });
 const handMesh = new THREE.Mesh(handGeo, handMat);
+handMesh.castShadow = true;
+handMesh.receiveShadow = true;
 scene.add(handMesh);
 
-// Fingers: rebuilt per trajectory load (finger count varies), updated per frame.
-const fingerMat = new THREE.MeshStandardMaterial({ color: 0xe7ebf2, roughness: 0.3, metalness: 0.1 });
+// Fingers: rebuilt per trajectory load (finger count varies), updated per frame. A shade
+// darker/cooler than the cream body so the end-effector reads as a distinct component.
+const fingerMat = new THREE.MeshStandardMaterial({ color: 0xd7dbe1, roughness: 0.4, metalness: 0.1 });
 let fingerMeshes = []; // array of THREE.Mesh (TubeGeometry), one per finger
 let fingerCaps = []; // one fingertip-end cap sphere per finger (same open-tube-end fix as the arm)
 function buildFingers(nFingers) {
@@ -1781,9 +2205,12 @@ function buildFingers(nFingers) {
   fingerCaps = [];
   for (let i = 0; i < nFingers; i++) {
     const mesh = new THREE.Mesh(new THREE.BufferGeometry(), fingerMat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     scene.add(mesh);
     fingerMeshes.push(mesh);
     const cap = new THREE.Mesh(new THREE.SphereGeometry(FINGER_RADIUS, 10, 10), fingerMat);
+    cap.castShadow = true;
     scene.add(cap);
     fingerCaps.push(cap);
   }
@@ -1807,20 +2234,46 @@ function buildObject(objName) {
   let geo;
   if (spec.type === "sphere") geo = new THREE.SphereGeometry(spec.radius, 24, 18);
   else geo = new THREE.CapsuleGeometry(spec.radius, spec.length, 8, 16);
-  const mat = new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.55 });
+  const mat = new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.5 });
   objectMesh = new THREE.Mesh(geo, mat);
+  objectMesh.castShadow = true;
+  objectMesh.receiveShadow = true;
   scene.add(objectMesh);
 }
 
 // Contact force arrows: a reusable pool, shown/hidden per frame based on recorded
 // contacts (real position + force vector, filtered to valid contacts at record time).
+// Built as a shaft + cone head (not THREE.ArrowHelper's thin Line) with an emissive
+// material so the accent color visually pops as a clean tapered arrow, not a flat line.
 const MAX_ARROWS = 24;
+const ARROW_UP = new THREE.Vector3(0, 1, 0);
+const arrowMat = new THREE.MeshStandardMaterial({
+  color: 0xff6a3d, emissive: 0xff6a3d, emissiveIntensity: 0.85, roughness: 0.35, metalness: 0.0,
+});
+const arrowShaftGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true);
+const arrowHeadGeo = new THREE.ConeGeometry(1, 1, 10);
+
+function makeForceArrow() {
+  const group = new THREE.Group();
+  const shaft = new THREE.Mesh(arrowShaftGeo, arrowMat);
+  const head = new THREE.Mesh(arrowHeadGeo, arrowMat);
+  group.add(shaft, head);
+  group.visible = false;
+  scene.add(group);
+  return { group, shaft, head };
+}
 const arrowPool = [];
-for (let i = 0; i < MAX_ARROWS; i++) {
-  const a = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(), 0.05, 0xff6a3d, 0.02, 0.014);
-  a.visible = false;
-  scene.add(a);
-  arrowPool.push(a);
+for (let i = 0; i < MAX_ARROWS; i++) arrowPool.push(makeForceArrow());
+
+function setArrow(arrow, pos, dir, len, headLen, headWidth) {
+  const shaftLen = Math.max(len - headLen, 0.001);
+  arrow.shaft.scale.set(headWidth * 0.28, shaftLen, headWidth * 0.28);
+  arrow.shaft.position.set(0, shaftLen / 2, 0);
+  arrow.head.scale.set(headWidth, headLen, headWidth);
+  arrow.head.position.set(0, shaftLen + headLen / 2, 0);
+  arrow.group.position.copy(pos);
+  arrow.group.quaternion.setFromUnitVectors(ARROW_UP, dir);
+  arrow.group.visible = true;
 }
 function updateContactArrows(contacts) {
   const n = Math.min(contacts.length, MAX_ARROWS);
@@ -1831,12 +2284,9 @@ function updateContactArrows(contacts) {
     const mag = c.mag;
     const dir = force.lengthSq() > 1e-10 ? force.clone().normalize() : new THREE.Vector3(0, 0, 1);
     const len = Math.min(0.02 + 0.012 * mag, 0.16);
-    arrowPool[i].position.copy(pos);
-    arrowPool[i].setDirection(dir);
-    arrowPool[i].setLength(len, len * 0.28, len * 0.16);
-    arrowPool[i].visible = true;
+    setArrow(arrowPool[i], pos, dir, len, len * 0.28, len * 0.16);
   }
-  for (let i = n; i < MAX_ARROWS; i++) arrowPool[i].visible = false;
+  for (let i = n; i < MAX_ARROWS; i++) arrowPool[i].group.visible = false;
 }
 
 // ---------------------------------------------------------------------------

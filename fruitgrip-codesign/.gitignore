@@ -28,6 +28,10 @@ venv/
 .env
 *.env
 
+# Cached third-party vendor sources for scripts/build_artifact_demo.py --
+# re-fetched from unpkg on demand, not meant to be committed.
+scripts/.artifact_vendor_cache/
+
 # --- Tooling / OS / editor ---
 .DS_Store
 .vscode/

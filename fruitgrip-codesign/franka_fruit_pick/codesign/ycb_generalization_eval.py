@@ -124,7 +124,7 @@ def _restore_layout() -> None:
     randomize_mod.RELIABLE_PICK_POOL = _ORIG_POOL
 
 
-def eval_object_design(params, obj_name: str, seed_base: int, n_trials: int = N_TRIALS) -> dict:
+def eval_object_design(params, obj_name: str, seed_base: int, n_trials: int = N_TRIALS, use_planner: bool = False) -> dict:
     _patch_layout(obj_name)
     try:
         xml_path = generate_gripper_xml(params)
@@ -139,7 +139,7 @@ def eval_object_design(params, obj_name: str, seed_base: int, n_trials: int = N_
         for i in range(n_trials):
             seed = seed_base + i
             task = randomizer.reset(seed=seed)
-            profile = adapt_grasp_profile(params, task.pick_object)
+            profile = adapt_grasp_profile(params, task.pick_object, use_planner=use_planner)
             m = run_pick_place(bundle, rt, task, profile)
             successes.append(bool(m.success))
             forces.append(m.peak_contact_force)
@@ -162,19 +162,36 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed-base", type=int, default=7000)
     ap.add_argument("--n-trials", type=int, default=N_TRIALS)
-    ap.add_argument("--out", type=str, default=str(_ROOT.parent.parent / "results" / "03_generalization" / "ycb_generalization_eval.json"))
+    ap.add_argument(
+        "--planner", action="store_true",
+        help="Route grasp targeting through grasp_planner.plan_grasp instead of the fixed "
+             "per-object-name heuristic. Off by default -- the frozen original results "
+             "(confirmation-eval, attribution, this file's own committed ycb_generalization_eval.json) "
+             "are produced without this flag and are unaffected by its existence.",
+    )
+    ap.add_argument(
+        "--out", type=str, default=None,
+        help="Defaults to results/03_generalization/ycb_generalization_eval.json normally, or "
+             "results/08_grasp_planner/ycb_generalization_eval_planner.json with --planner -- "
+             "different paths so a --planner run can never silently overwrite the frozen original.",
+    )
     ap.add_argument("--objects", type=str, nargs="*", default=None, help="Override object list (for smoke tests).")
     args = ap.parse_args()
 
     objects = args.objects or GENERALIZATION_OBJECTS
-    out_path = Path(args.out)
+    if args.out is not None:
+        out_path = Path(args.out)
+    elif args.planner:
+        out_path = _ROOT.parent.parent / "results" / "08_grasp_planner" / "ycb_generalization_eval_planner.json"
+    else:
+        out_path = _ROOT.parent.parent / "results" / "03_generalization" / "ycb_generalization_eval.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    results = {"baseline": {}, "winner": {}, "objects": objects, "n_trials": args.n_trials}
+    results = {"baseline": {}, "winner": {}, "objects": objects, "n_trials": args.n_trials, "use_planner": args.planner}
     t0 = time.time()
     for obj in objects:
         for label, params in (("baseline", BASELINE_PARAMS), ("winner", JOINT_BEST_PARAMS)):
-            r = eval_object_design(params, obj, args.seed_base, n_trials=args.n_trials)
+            r = eval_object_design(params, obj, args.seed_base, n_trials=args.n_trials, use_planner=args.planner)
             results[label][obj] = r
             print(f"[{label}] {obj}: {r['successes']}/{r['n']} ({r['success_rate']:.1%}) force={r['mean_peak_force_N']:.1f}N wall={r['wall_seconds']:.1f}s")
         # Incremental write so partial progress survives an interruption.

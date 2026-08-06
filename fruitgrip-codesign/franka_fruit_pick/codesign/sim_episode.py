@@ -67,6 +67,10 @@ class GraspProfile:
     close_force: float = -10.0
     center_align: bool = False
     grasp_hand_z_override: float | None = None  # set to skip AABB-derived height entirely
+    # Per-object override of the module-level GRASP_CENTER_DROP_FRAC constant, e.g. from
+    # grasp_planner.plan_grasp(...).center_drop_frac. Defaults to that same constant, so
+    # leaving this unset reproduces the exact prior height formula/behavior.
+    center_drop_frac: float = GRASP_CENTER_DROP_FRAC
 
 
 @dataclass
@@ -167,7 +171,7 @@ def _grasp_hand_z(entity, profile: GraspProfile) -> float:
         return z_max + PALM_CLEARANCE
     center_z = 0.5 * (z_min + z_max)
     half_height = 0.5 * (z_max - z_min)
-    fingertip_z = center_z - GRASP_CENTER_DROP_FRAC * half_height
+    fingertip_z = center_z - profile.center_drop_frac * half_height
     z_jaw_align = fingertip_z + profile.hand_to_fingertip
     z_top_clear = z_max + PALM_CLEARANCE
     return max(z_jaw_align, z_top_clear)

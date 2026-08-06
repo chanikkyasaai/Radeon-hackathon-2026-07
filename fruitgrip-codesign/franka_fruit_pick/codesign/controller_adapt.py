@@ -42,6 +42,7 @@ if str(_ROOT.parent) not in sys.path:
 
 from gripper_gen import GripperParams, hand_to_fingertip_z  # noqa: E402
 from sim_episode import GraspProfile  # noqa: E402
+import grasp_planner  # noqa: E402
 
 BASE_CLOSE_FORCE = -10.0  # N, at compliance = 0 (rigid)
 COMPLIANCE_FORCE_GAIN = 0.5  # allows up to 1.5x force at compliance = 1 (fully soft)
@@ -94,18 +95,43 @@ _DEFAULT_META = (90.0, False)
 
 def adapt_grasp_profile(
     params: GripperParams, pick_object: str, controller: ControllerParams | None = None,
+    *, use_planner: bool = False,
 ) -> GraspProfile:
     """`controller=None` (default): full analytic co-adaptation (compliance -> force),
     used by the joint co-design search. Pass an explicit `controller` -- e.g.
     `BASELINE_CONTROLLER` (geometry-only arm) or a swept `ControllerParams`
     (controller-only arm) -- to decouple the force/height choice from this design's
     own compliance, for the attribution experiment (run_attribution.py).
+
+    `use_planner=False` (default): the original fixed per-object-name lookup
+    (`_OBJECT_GRASP_META`, `sim_episode.GRASP_CENTER_DROP_FRAC`) -- byte-identical to
+    every prior result in this project (confirmation-eval, attribution, cross-simulator,
+    generalization). Every existing call site is unaffected by this flag's addition.
+
+    `use_planner=True`: replace the height/yaw choice with `grasp_planner.plan_grasp`'s
+    geometry-derived target for this exact (object, gripper aperture) pair. Falls back to
+    the original fixed heuristic, per-object, whenever the planner reports the object as
+    geometrically infeasible for this design at every sampled height/yaw -- a real
+    "too big for this gripper" finding, not a bug to route around silently.
     """
     yaw_offset, center_align = _OBJECT_GRASP_META.get(pick_object, _DEFAULT_META)
+    center_drop_frac = None
+    if use_planner:
+        planned = grasp_planner.plan_grasp(pick_object, params)
+        if planned.feasible:
+            yaw_offset = planned.yaw_offset_deg
+            center_align = True
+            center_drop_frac = planned.center_drop_frac
+        # else: planner found no feasible grasp anywhere on this object for this design
+        # -- keep the original fixed-heuristic (yaw_offset, center_align) as the fallback
+        # rather than forcing an override we already know is infeasible.
     ctrl = (controller if controller is not None else coadapted_controller(params)).clipped()
-    return GraspProfile(
+    kwargs = dict(
         yaw_offset=yaw_offset,
         hand_to_fingertip=hand_to_fingertip_z(params) + ctrl.height_offset,
         close_force=ctrl.close_force,
         center_align=center_align,
     )
+    if center_drop_frac is not None:
+        kwargs["center_drop_frac"] = center_drop_frac
+    return GraspProfile(**kwargs)

@@ -5,12 +5,12 @@ One exact command per result table in [`TECHNICAL_REPORT.md`](TECHNICAL_REPORT.m
 ## Setup
 
 ```bash
-cd franka_fruit_pick_demo
-uv sync                              # installs genesis-world, numpy, trimesh, etc.
+uv sync --extra codesign              # genesis-world, numpy, trimesh, cma, etc.
+uv pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU build; see below for ROCm
 uv run python franka_fruit_pick/setup_assets.py   # verify/populate bundled assets
 ```
 
-Requires Python 3.12. For the ROCm-backend results (§6, and the GPU rows below), you additionally need an AMD GPU with ROCm 7.2.1 and the matched torch wheels — see the original demo README section this project builds on, or provision a ROCm cloud instance with the `Genesis-ROCm-CoDesign` template. MuJoCo results (§7) additionally need `pip install mujoco` (already a `genesis-world` dependency, no extra install needed in this project's `pyproject.toml`).
+Requires Python 3.12. `torch` is deliberately not a plain dependency in `pyproject.toml` — `genesis-world` imports it unconditionally (so it's required for every result below, not just the GPU ones), but the correct wheel depends on your backend, so it's installed explicitly here. For the ROCm-backend results (§6, and the GPU rows below), install the matched ROCm 7.2.1 torch wheel instead of the CPU one above — see the original demo README section this project builds on, or provision a ROCm cloud instance with the `Genesis-ROCm-CoDesign` template. MuJoCo results (§7) additionally need `pip install mujoco` (already a `genesis-world` dependency, no extra install needed in this project's `pyproject.toml`).
 
 ---
 
