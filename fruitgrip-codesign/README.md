@@ -1,5 +1,7 @@
 # FruitGrip-CoDesign
 
+*Solo developer: **Chanikya Nelapatla*** — AMD AI DevMaster Hackathon, Track 3: Physical AI.
+
 ![Composite dashboard: every headline result at a glance — confirmation bar, YCB generalization split, ROCm throughput, attribution reliability, force margin, grasp planner comparison](docs/images/dashboard.png)
 
 **Gripper geometry is a free variable manipulation research has held constant — jointly searching geometry and control finds task-adaptive hardware no policy-only optimization can reach, and it works by resisting rotation, not squeezing harder.**
@@ -13,6 +15,7 @@
 [![Objects tested](https://img.shields.io/badge/generalization-36%20YCB%20objects-orange)]()
 [![Grasp planner](https://img.shields.io/badge/grasp%20planner-38%20objects%2C%20real%20geometry-orange)]()
 [![Engines](https://img.shields.io/badge/cross--validated-Genesis%20%2B%20MuJoCo-purple)]()
+[![Team](https://img.shields.io/badge/team-solo%20developer-lightgrey)]()
 
 **[▶ Watch the demo video](https://drive.google.com/drive/folders/1hEso_WAGyrSZeIq-kZmOnrUcMgNMCHYu?usp=sharing)** — end-to-end walkthrough of the co-design search, the confirmation eval, and both live demos below.
 
@@ -152,7 +155,7 @@ Refer to the upstream projects for their licenses if redistributing these assets
 
 ## Team
 
-**Chanikya Nelapatla** — AMD AI DevMaster Hackathon, Track 3: Physical AI.
+**Chanikya Nelapatla** — solo developer. AMD AI DevMaster Hackathon, Track 3: Physical AI. Every stage of this project — the co-design search, the statistical validation, the cross-simulator replication, the ROCm benchmarking, the grasp planner, and the live demos above — was designed, built, and validated by one person.
 
 ## License
 
